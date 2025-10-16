@@ -1,211 +1,126 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Image Stitcher (Rows)</title>
-  <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; padding: 1rem; }
-    #dropzone {
-      border: 2px dashed #aaa;
-      border-radius: 10px;
-      padding: 40px;
-      text-align: center;
-      color: #666;
-      cursor: pointer;
-      margin-bottom: 1rem;
-    }
-    #thumbs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 1rem;
-    }
-    .thumb {
-      position: relative;
-      display: inline-block;
-    }
-    .thumb img {
-      width: 80px;
-      height: 80px;
-      object-fit: cover;
-      border-radius: 5px;
-    }
-    .thumb button {
-      position: absolute;
-      top: 0;
-      right: 0;
-      border: none;
-      background: rgba(0,0,0,0.6);
-      color: white;
-      cursor: pointer;
-      border-radius: 0 5px 0 5px;
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-    label { display: flex; align-items: center; gap: 0.5rem; }
-    input[type="number"] { width: 70px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Stitcher</title>
+<style>
+  body { font-family: sans-serif; text-align: center; background: #f4f4f4; }
+  #images { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 1em; }
+  #images img { height: 100px; margin: 5px; object-fit: contain; border: 1px solid #ccc; }
+  canvas { margin-top: 1em; border: 1px solid #000; background: white; }
+  .controls button { margin: 5px; padding: 8px 12px; }
+</style>
 </head>
 <body>
-  <h1>Image Stitcher (Max per Row)</h1>
+<h1>Image Stitcher</h1>
+<input type="file" id="fileInput" multiple accept="image/*">
+<div class="controls">
+  <button id="duplicateLastBtn">Duplicate Last Image</button>
+  <button id="stitchBtn">Stitch Images</button>
+  <button id="downloadBtn">Download</button>
+  <button id="squareToggleBtn">Make Square: OFF</button>
+</div>
+<label>Max Images per Row: <input type="number" id="maxPerRow" value="5" min="1" style="width:50px"></label>
+<div id="images"></div>
+<canvas id="canvas"></canvas>
 
-  <div id="dropzone">Drop images here or click to select</div>
-  <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+<script>
+const fileInput = document.getElementById('fileInput');
+const imagesDiv = document.getElementById('images');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const duplicateLastBtn = document.getElementById('duplicateLastBtn');
+const stitchBtn = document.getElementById('stitchBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const squareToggleBtn = document.getElementById('squareToggleBtn');
+let images = [];
+let makeSquare = false;
 
-  <div id="thumbs"></div>
+fileInput.addEventListener('change', e => {
+  for (const file of e.target.files) {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => { images.push(img); renderPreviews(); };
+  }
+});
 
-  <div class="controls">
-    <label>Spacing <input type="number" id="spacing" value="0" min="0"></label>
-    <label>Background <input type="color" id="bg" value="#ffffff"></label>
-    <label>Fit Height <input type="number" id="fitHeight" value="200" min="10"></label>
-    <label>Max per Row <input type="number" id="maxPerRow" value="5" min="1"></label>
-    <button id="stitchBtn">Stitch & Download</button>
-    <button id="clearBtn">Clear</button>
-  </div>
+duplicateLastBtn.addEventListener('click', () => {
+  if (images.length > 0) {
+    const last = images[images.length - 1];
+    const copy = new Image();
+    copy.src = last.src;
+    copy.onload = () => { images.push(copy); renderPreviews(); };
+  }
+});
 
-  <div class="controls">
-    <label>Repeat Last × <input type="number" id="repeatCount" value="1" min="1"></label>
-    <button id="repeatBtn">Duplicate</button>
-  </div>
+squareToggleBtn.addEventListener('click', () => {
+  makeSquare = !makeSquare;
+  squareToggleBtn.textContent = `Make Square: ${makeSquare ? 'ON' : 'OFF'}`;
+});
 
-  <script>
-    const dropzone = document.getElementById('dropzone');
-    const fileInput = document.getElementById('fileInput');
-    const thumbs = document.getElementById('thumbs');
-    const stitchBtn = document.getElementById('stitchBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const repeatBtn = document.getElementById('repeatBtn');
-    const repeatCountInput = document.getElementById('repeatCount');
-    const spacingInput = document.getElementById('spacing');
-    const bgInput = document.getElementById('bg');
-    const fitHeightInput = document.getElementById('fitHeight');
-    const maxPerRowInput = document.getElementById('maxPerRow');
+stitchBtn.addEventListener('click', () => {
+  if (images.length === 0) return alert('No images selected');
+  const maxPerRow = parseInt(document.getElementById('maxPerRow').value) || images.length;
+  const rowHeight = Math.max(...images.map(img => img.height));
+  const rows = Math.ceil(images.length / maxPerRow);
+  const rowWidths = [];
+  let width = 0;
 
-    let files = [];
+  for (let i = 0; i < rows; i++) {
+    const rowImgs = images.slice(i * maxPerRow, (i + 1) * maxPerRow);
+    rowWidths.push(rowImgs.reduce((w, img) => w + img.width, 0));
+  }
 
-    dropzone.addEventListener('click', () => fileInput.click());
-    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.style.borderColor = '#555'; });
-    dropzone.addEventListener('dragleave', () => dropzone.style.borderColor = '#aaa');
-    dropzone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropzone.style.borderColor = '#aaa';
-      const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-      addFiles(dropped);
-    });
-    fileInput.addEventListener('change', e => addFiles(Array.from(e.target.files)));
+  const totalWidth = Math.max(...rowWidths);
+  const totalHeight = rows * rowHeight;
 
-    function addFiles(newFiles) {
-      for (const f of newFiles) {
-        const url = URL.createObjectURL(f);
-        files.push({ file: f, url });
-      }
-      renderThumbs();
+  let finalWidth = totalWidth;
+  let finalHeight = totalHeight;
+
+  if (makeSquare) {
+    const maxSide = Math.max(finalWidth, finalHeight);
+    finalWidth = finalHeight = maxSide;
+  }
+
+  canvas.width = finalWidth;
+  canvas.height = finalHeight;
+  ctx.clearRect(0, 0, finalWidth, finalHeight);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, finalWidth, finalHeight);
+
+  let y = 0;
+  for (let i = 0; i < rows; i++) {
+    const rowImgs = images.slice(i * maxPerRow, (i + 1) * maxPerRow);
+    let x = 0;
+    for (const img of rowImgs) {
+      ctx.drawImage(img, x, y, img.width, img.height);
+      x += img.width;
     }
+    y += rowHeight;
+  }
 
-    function renderThumbs() {
-      thumbs.innerHTML = '';
-      files.forEach((f, i) => {
-        const div = document.createElement('div');
-        div.className = 'thumb';
-        div.draggable = true;
-        div.innerHTML = `<img src=\"${f.url}\"><button>&times;</button>`;
-        div.querySelector('button').onclick = () => {
-          URL.revokeObjectURL(f.url);
-          files.splice(i, 1);
-          renderThumbs();
-        };
-        div.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', i));
-        div.addEventListener('drop', e => {
-          e.preventDefault();
-          const from = parseInt(e.dataTransfer.getData('text/plain'));
-          const [moved] = files.splice(from, 1);
-          files.splice(i, 0, moved);
-          renderThumbs();
-        });
-        div.addEventListener('dragover', e => e.preventDefault());
-        thumbs.appendChild(div);
-      });
-    }
+  if (makeSquare && totalWidth < totalHeight) {
+    const diff = (finalWidth - totalWidth) / 2;
+    const temp = ctx.getImageData(0, 0, totalWidth, totalHeight);
+    ctx.clearRect(0, 0, finalWidth, finalHeight);
+    ctx.putImageData(temp, diff, 0);
+  }
+});
 
-    clearBtn.onclick = () => {
-      files.forEach(f => URL.revokeObjectURL(f.url));
-      files = [];
-      renderThumbs();
-    };
+downloadBtn.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'stitched.png';
+  link.href = canvas.toDataURL();
+  link.click();
+});
 
-    repeatBtn.onclick = () => {
-      if (files.length === 0) return;
-      const count = parseInt(repeatCountInput.value) || 1;
-      const last = files[files.length - 1];
-      for (let i = 0; i < count; i++) {
-        const copy = { file: last.file, url: last.url };
-        files.push(copy);
-      }
-      renderThumbs();
-    };
-
-    stitchBtn.onclick = async () => {
-      if (files.length === 0) return;
-      const imgs = await Promise.all(files.map(f => loadImage(f.url)));
-      const fitHeight = parseInt(fitHeightInput.value) || 200;
-      const spacing = parseInt(spacingInput.value) || 0;
-      const bg = bgInput.value || '#ffffff';
-      const maxPerRow = parseInt(maxPerRowInput.value) || 5;
-
-      // scale images
-      const scaled = imgs.map(img => {
-        const scale = fitHeight / img.height;
-        return { img, width: img.width * scale, height: fitHeight };
-      });
-
-      // compute grid
-      const rows = [];
-      for (let i = 0; i < scaled.length; i += maxPerRow) {
-        rows.push(scaled.slice(i, i + maxPerRow));
-      }
-
-      const rowWidths = rows.map(r => r.reduce((s, it) => s + it.width, 0) + spacing * (r.length - 1));
-      const totalWidth = Math.max(...rowWidths);
-      const totalHeight = rows.length * fitHeight + spacing * (rows.length - 1);
-
-      // draw canvas
-      const canvas = document.createElement('canvas');
-      canvas.width = totalWidth;
-      canvas.height = totalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      let y = 0;
-      for (const row of rows) {
-        let x = 0;
-        for (const s of row) {
-          ctx.drawImage(s.img, 0, 0, s.img.width, s.img.height, x, y, s.width, s.height);
-          x += s.width + spacing;
-        }
-        y += fitHeight + spacing;
-      }
-
-      // download
-      const link = document.createElement('a');
-      link.download = 'stitched.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    };
-
-    function loadImage(url) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = url;
-      });
-    }
-  </script>
+function renderPreviews() {
+  imagesDiv.innerHTML = '';
+  for (const img of images) {
+    imagesDiv.appendChild(img.cloneNode());
+  }
+}
+</script>
 </body>
 </html>
