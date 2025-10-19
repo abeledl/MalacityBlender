@@ -20,6 +20,7 @@
   <button id="stitchBtn">Stitch Images</button>
   <button id="downloadBtn">Download</button>
   <button id="squareToggleBtn">Make Square: OFF</button>
+  <button id="alphaToggleBtn">Preserve Alpha: OFF</button> <!-- ✅ New toggle -->
 </div>
 <label>Max Images per Row: <input type="number" id="maxPerRow" value="5" min="1" style="width:50px"></label>
 <div id="images"></div>
@@ -34,8 +35,10 @@ const duplicateLastBtn = document.getElementById('duplicateLastBtn');
 const stitchBtn = document.getElementById('stitchBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const squareToggleBtn = document.getElementById('squareToggleBtn');
+const alphaToggleBtn = document.getElementById('alphaToggleBtn'); // ✅
 let images = [];
 let makeSquare = false;
+let preserveAlpha = false; // ✅
 
 fileInput.addEventListener('change', e => {
   for (const file of e.target.files) {
@@ -57,6 +60,13 @@ duplicateLastBtn.addEventListener('click', () => {
 squareToggleBtn.addEventListener('click', () => {
   makeSquare = !makeSquare;
   squareToggleBtn.textContent = `Make Square: ${makeSquare ? 'ON' : 'OFF'}`;
+});
+
+// ✅ Preserve Alpha toggle
+alphaToggleBtn.addEventListener('click', () => {
+  preserveAlpha = !preserveAlpha;
+  alphaToggleBtn.textContent = `Preserve Alpha: ${preserveAlpha ? 'ON' : 'OFF'}`;
+  canvas.style.background = preserveAlpha ? 'transparent' : 'white';
 });
 
 stitchBtn.addEventListener('click', () => {
@@ -83,18 +93,26 @@ stitchBtn.addEventListener('click', () => {
     finalWidth = finalHeight = maxSide;
   }
 
-  canvas.width = finalWidth;
-  canvas.height = finalHeight;
-  ctx.clearRect(0, 0, finalWidth, finalHeight);
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, finalWidth, finalHeight);
+  // ✅ Enable or disable alpha depending on toggle
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = finalWidth;
+  tempCanvas.height = finalHeight;
+  const tempCtx = tempCanvas.getContext('2d', { alpha: preserveAlpha });
+
+  // ✅ Background fill only if not preserving alpha
+  if (!preserveAlpha) {
+    tempCtx.fillStyle = "#fff";
+    tempCtx.fillRect(0, 0, finalWidth, finalHeight);
+  } else {
+    tempCtx.clearRect(0, 0, finalWidth, finalHeight);
+  }
 
   let y = 0;
   for (let i = 0; i < rows; i++) {
     const rowImgs = images.slice(i * maxPerRow, (i + 1) * maxPerRow);
     let x = 0;
     for (const img of rowImgs) {
-      ctx.drawImage(img, x, y, img.width, img.height);
+      tempCtx.drawImage(img, x, y, img.width, img.height);
       x += img.width;
     }
     y += rowHeight;
@@ -102,16 +120,23 @@ stitchBtn.addEventListener('click', () => {
 
   if (makeSquare && totalWidth < totalHeight) {
     const diff = (finalWidth - totalWidth) / 2;
-    const temp = ctx.getImageData(0, 0, totalWidth, totalHeight);
-    ctx.clearRect(0, 0, finalWidth, finalHeight);
-    ctx.putImageData(temp, diff, 0);
+    const tempData = tempCtx.getImageData(0, 0, totalWidth, totalHeight);
+    tempCtx.clearRect(0, 0, finalWidth, finalHeight);
+    tempCtx.putImageData(tempData, diff, 0);
   }
+
+  // Copy to main canvas
+  canvas.width = finalWidth;
+  canvas.height = finalHeight;
+  ctx.clearRect(0, 0, finalWidth, finalHeight);
+  ctx.drawImage(tempCanvas, 0, 0);
 });
 
 downloadBtn.addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = 'stitched.png';
-  link.href = canvas.toDataURL();
+  // ✅ Preserve alpha in export too
+  link.href = canvas.toDataURL('image/png');
   link.click();
 });
 
