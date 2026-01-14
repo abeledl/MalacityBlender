@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Stitcher</title>
+<style>
+  body { font-family: sans-serif; text-align: center; background: #f4f4f4; }
+  #images { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 1em; }
+  #images img { height: 100px; margin: 5px; object-fit: contain; border: 1px solid #ccc; }
+  canvas { margin-top: 1em; border: 1px solid #000; background: white; }
+  .controls button { margin: 5px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<h1>Image Stitcher</h1>
+<input type="file" id="fileInput" multiple accept="image/*">
+<div class="controls">
+  <button id="duplicateLastBtn">Duplicate Last Image</button>
+  <button id="stitchBtn">Stitch Images</button>
+  <button id="downloadBtn">Download</button>
+  <button id="squareToggleBtn">Make Square: OFF</button>
+  <button id="alphaToggleBtn">Preserve Alpha: OFF</button>
+  <label>Inner Padding: <input type="number" id="innerPadding" value="0" min="0" style="width:60px"></label>
+  <label>Outer Margin: <input type="number" id="outerMargin" value="0" min="0" style="width:60px"></label>
+</div>
+<label>Max Images per Row: <input type="number" id="maxPerRow" value="5" min="1" style="width:50px"></label>
+<div id="images"></div>
+<canvas id="canvas"></canvas>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const imagesDiv = document.getElementById('images');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const duplicateLastBtn = document.getElementById('duplicateLastBtn');
+const stitchBtn = document.getElementById('stitchBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const squareToggleBtn = document.getElementById('squareToggleBtn');
+const alphaToggleBtn = document.getElementById('alphaToggleBtn');
+let images = [];
+let makeSquare = false;
+let preserveAlpha = false;
+let dragIndex = null;
+
+fileInput.addEventListener('change', e => {
+  for (const file of e.target.files) {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => { images.push(img); renderPreviews(); };
+  }
+});
+
+duplicateLastBtn.addEventListener('click', () => {
+  if (images.length > 0) {
+    const last = images[images.length - 1];
+    const copy = new Image();
+    copy.src = last.src;
+    copy.onload = () => { images.push(copy); renderPreviews(); };
+  }
+});
+
+squareToggleBtn.addEventListener('click', () => {
+  makeSquare = !makeSquare;
+  squareToggleBtn.textContent = `Make Square: ${makeSquare ? 'ON' : 'OFF'}`;
+});
+
+alphaToggleBtn.addEventListener('click', () => {
+  preserveAlpha = !preserveAlpha;
+  alphaToggleBtn.textContent = `Preserve Alpha: ${preserveAlpha ? 'ON' : 'OFF'}`;
+  canvas.style.background = preserveAlpha ? 'transparent' : 'white';
+});
+
+/* -----------------------------
+      DRAG & DROP REORDERING
+------------------------------*/
+function makeDraggable(imgElem, index) {
+  imgElem.draggable = true;
+
+  imgElem.addEventListener('dragstart', () => {
+    dragIndex = index;
+    imgElem.style.opacity = "0.4";
+  });
+
+  imgElem.addEventListener('dragend', () => {
+    imgElem.style.opacity = "1";
+  });
+
+  imgElem.addEventListener('dragover', e => e.preventDefault());
+
+  imgElem.addEventListener('drop', e => {
+    e.preventDefault();
+    const dropIndex = index;
+
+    if (dragIndex === null || dragIndex === dropIndex) return;
+
+    const moved = images[dragIndex];
+    images.splice(dragIndex, 1); 
+    images.splice(dropIndex, 0, moved);
+
+    dragIndex = null;
+    renderPreviews();
+  });
+}
+
+function renderPreviews() {
+  imagesDiv.innerHTML = '';
+  images.forEach((img, i) => {
+    const preview = img.cloneNode();
+    makeDraggable(preview, i);
+    imagesDiv.appendChild(preview);
+  });
+}
+
+/* -----------------------------
+     STITCHING (unchanged)
+------------------------------*/
+
+stitchBtn.addEventListener('click', () => {
+  if (images.length === 0) return alert('No images selected');
+
+  const innerPadding = parseInt(document.getElementById('innerPadding').value) || 0;
+  const outerMargin = parseInt(document.getElementById('outerMargin').value) || 0;
+  const maxPerRow = parseInt(document.getElementById('maxPerRow').value) || images.length;
+
+  const rowHeight = Math.max(...images.map(img => img.height));
+  const rows = Math.ceil(images.length / maxPerRow);
+
+  let rowWidths = [];
+  for (let i = 0; i < rows; i++) {
+    const rowImgs = images.slice(i * maxPerRow, (i + 1) * maxPerRow);
+    const imgWidthTotal = rowImgs.reduce((sum, img) => sum + img.width, 0);
+    const paddingTotal = innerPadding * Math.max(0, rowImgs.length - 1);
+    rowWidths.push(imgWidthTotal + paddingTotal);
+  }
+
+  const totalWidth = Math.max(...rowWidths);
+  const totalHeight = rows * rowHeight + innerPadding * (rows - 1);
+
+  let finalWidth = totalWidth + outerMargin * 2;
+  let finalHeight = totalHeight + outerMargin * 2;
+
+  if (makeSquare) {
+    const maxSide = Math.max(finalWidth, finalHeight);
+    finalWidth = finalHeight = maxSide;
+  }
+
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = finalWidth;
+  tempCanvas.height = finalHeight;
+  const tempCtx = tempCanvas.getContext('2d', { alpha: preserveAlpha });
+
+  if (!preserveAlpha) {
+    tempCtx.fillStyle = "#fff";
+    tempCtx.fillRect(0, 0, finalWidth, finalHeight);
+  } else {
+    tempCtx.clearRect(0, 0, finalWidth, finalHeight);
+  }
+
+  let y = outerMargin;
+  for (let i = 0; i < rows; i++) {
+    const rowImgs = images.slice(i * maxPerRow, (i + 1) * maxPerRow);
+    let x = outerMargin;
+    for (let img of rowImgs) {
+      tempCtx.drawImage(img, x, y, img.width, img.height);
+      x += img.width + innerPadding;
+    }
+    y += rowHeight + innerPadding;
+  }
+
+  canvas.width = finalWidth;
+  canvas.height = finalHeight;
+  ctx.clearRect(0, 0, finalWidth, finalHeight);
+  ctx.drawImage(tempCanvas, 0, 0);
+});
+
+downloadBtn.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'stitched.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+</script>
+
+</body>
+</html>

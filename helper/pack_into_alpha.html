@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Albedo + Smoothness (Alpha) Packer</title>
+
+<style>
+  body {
+    font-family: sans-serif;
+    background: #1e1e1e;
+    color: #eee;
+    padding: 20px;
+    border: 2px dashed #444;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  body.dragover {
+    border-color: #4fc3f7;
+    background: #252525;
+  }
+
+  h1 { font-size: 20px; }
+  input { margin: 8px 0; }
+
+  button {
+    margin-top: 12px;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .status {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #aaa;
+  }
+
+  canvas { display: none; }
+</style>
+</head>
+<body>
+
+<h1>Pack Smoothness into Albedo Alpha</h1>
+<p>Drag & drop textures anywhere or use file inputs</p>
+
+<label>Albedo (RGB)</label><br />
+<input type="file" id="albedoInput" accept="image/*"><br />
+
+<label>Smoothness (Grayscale)</label><br />
+<input type="file" id="smoothnessInput" accept="image/*"><br />
+
+<button id="packBtn">Pack & Download</button>
+
+<div class="status" id="statusText">
+  Waiting for textures…
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const albedoInput = document.getElementById("albedoInput");
+const smoothnessInput = document.getElementById("smoothnessInput");
+const statusText = document.getElementById("statusText");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let albedoImg = null;
+let smoothnessImg = null;
+
+function loadImage(file, callback) {
+  const img = new Image();
+  img.onload = () => callback(img);
+  img.src = URL.createObjectURL(file);
+}
+
+function updateStatus() {
+  statusText.textContent =
+    `Albedo: ${albedoImg ? "✔ loaded" : "✖ missing"} | ` +
+    `Smoothness: ${smoothnessImg ? "✔ loaded" : "✖ missing"}`;
+}
+
+// File inputs
+albedoInput.onchange = e => {
+  loadImage(e.target.files[0], img => {
+    albedoImg = img;
+    updateStatus();
+  });
+};
+
+smoothnessInput.onchange = e => {
+  loadImage(e.target.files[0], img => {
+    smoothnessImg = img;
+    updateStatus();
+  });
+};
+
+// Drag & Drop
+document.addEventListener("dragover", e => {
+  e.preventDefault();
+  document.body.classList.add("dragover");
+});
+
+document.addEventListener("dragleave", () => {
+  document.body.classList.remove("dragover");
+});
+
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  document.body.classList.remove("dragover");
+
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith("image")) return;
+
+  loadImage(file, img => {
+    if (!albedoImg) {
+      albedoImg = img;
+    } else if (!smoothnessImg) {
+      smoothnessImg = img;
+    } else {
+      albedoImg = img; // overwrite albedo if both filled
+    }
+    updateStatus();
+  });
+});
+
+// Pack button
+document.getElementById("packBtn").onclick = () => {
+  if (!albedoImg || !smoothnessImg) {
+    alert("Please load both Albedo and Smoothness textures.");
+    return;
+  }
+
+  const w = albedoImg.width;
+  const h = albedoImg.height;
+
+  canvas.width = w;
+  canvas.height = h;
+
+  ctx.drawImage(albedoImg, 0, 0, w, h);
+  const albedoData = ctx.getImageData(0, 0, w, h);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(smoothnessImg, 0, 0, w, h);
+  const smoothData = ctx.getImageData(0, 0, w, h);
+
+  for (let i = 0; i < albedoData.data.length; i += 4) {
+    const r = smoothData.data[i];
+    const g = smoothData.data[i + 1];
+    const b = smoothData.data[i + 2];
+
+    const smoothness = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    albedoData.data[i + 3] = smoothness;
+  }
+
+  ctx.putImageData(albedoData, 0, 0);
+
+  const link = document.createElement("a");
+  link.download = "albedo_smoothness_alpha.png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+};
+</script>
+
+</body>
+</html>

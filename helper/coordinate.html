@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>1px Coordinate Gradient Generator</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      padding: 20px;
+    }
+    canvas {
+      image-rendering: pixelated;
+      border: 1px solid #aaa;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>1-Pixel Gradient Coordinate Generator</h2>
+
+<label>
+  Width (pixels):
+  <input type="number" id="widthInput" value="256" min="1">
+</label>
+
+<button onclick="generate()">Generate</button>
+
+<br>
+<canvas id="canvas"></canvas>
+
+<script>
+function generate() {
+  const width = parseInt(document.getElementById("widthInput").value);
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = width;
+  canvas.height = 1;
+
+  const imageData = ctx.createImageData(width, 1);
+  const data = imageData.data;
+
+  for (let x = 0; x < width; x++) {
+    // Normalize 0 → 1 across width
+    const t = x / (width - 1);
+
+    // White → Black
+    const value = Math.round(255 * (1 - t));
+
+    const i = x * 4;
+    data[i + 0] = value; // R
+    data[i + 1] = value; // G
+    data[i + 2] = value; // B
+    data[i + 3] = 255;   // A
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // Scale up for visibility (does NOT change pixel data)
+  canvas.style.width = width + "px";
+  canvas.style.height = "20px";
+}
+
+generate();
+</script>
+
+</body>
+</html>

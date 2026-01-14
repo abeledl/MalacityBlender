@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RGBA Texture Packer (Drag & Drop)</title>
+<style>
+    body {
+        font-family: sans-serif;
+        background: #1e1e1e;
+        color: #ddd;
+        padding: 20px;
+    }
+
+    h2 {
+        margin-bottom: 12px;
+    }
+
+    .channels {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .drop {
+        border: 2px dashed #555;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        background: #262626;
+    }
+
+    .drop.dragover {
+        border-color: #4caf50;
+        background: #2e3b2e;
+    }
+
+    .drop span {
+        display: block;
+        margin-top: 8px;
+        font-size: 12px;
+        color: #aaa;
+    }
+
+    button {
+        padding: 10px 16px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    canvas {
+        display: block;
+        margin-top: 20px;
+        border: 1px solid #444;
+    }
+
+    input {
+        display: none;
+    }
+</style>
+</head>
+<body>
+
+<h2>RGBA Texture Packer</h2>
+
+<div class="channels">
+    <div class="drop" data-channel="r">Red<input type="file" accept="image/*"></div>
+    <div class="drop" data-channel="g">Green<input type="file" accept="image/*"></div>
+    <div class="drop" data-channel="b">Blue<input type="file" accept="image/*"></div>
+    <div class="drop" data-channel="a">Alpha<input type="file" accept="image/*"></div>
+</div>
+
+<button onclick="pack()">Pack Texture</button>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const drops = document.querySelectorAll(".drop");
+const files = {};
+
+drops.forEach(drop => {
+    const input = drop.querySelector("input");
+
+    drop.addEventListener("click", () => input.click());
+
+    input.addEventListener("change", e => {
+        files[drop.dataset.channel] = e.target.files[0];
+        drop.innerHTML = drop.dataset.channel.toUpperCase() + "<span>" + e.target.files[0].name + "</span>";
+        drop.appendChild(input);
+    });
+
+    drop.addEventListener("dragover", e => {
+        e.preventDefault();
+        drop.classList.add("dragover");
+    });
+
+    drop.addEventListener("dragleave", () => {
+        drop.classList.remove("dragover");
+    });
+
+    drop.addEventListener("drop", e => {
+        e.preventDefault();
+        drop.classList.remove("dragover");
+
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+
+        files[drop.dataset.channel] = file;
+        drop.innerHTML = drop.dataset.channel.toUpperCase() + "<span>" + file.name + "</span>";
+        drop.appendChild(input);
+    });
+});
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function loadImage(file) {
+    return new Promise(resolve => {
+        if (!file) return resolve(null);
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.src = URL.createObjectURL(file);
+    });
+}
+
+async function pack() {
+    const images = {
+        r: await loadImage(files.r),
+        g: await loadImage(files.g),
+        b: await loadImage(files.b),
+        a: await loadImage(files.a)
+    };
+
+    const base = images.r || images.g || images.b || images.a;
+    if (!base) {
+        alert("Drop at least one image.");
+        return;
+    }
+
+    canvas.width = base.width;
+    canvas.height = base.height;
+
+    function getData(img) {
+        if (!img) return null;
+        const c = document.createElement("canvas");
+        c.width = img.width;
+        c.height = img.height;
+        const cctx = c.getContext("2d");
+        cctx.drawImage(img, 0, 0);
+        return cctx.getImageData(0, 0, c.width, c.height).data;
+    }
+
+    const r = getData(images.r);
+    const g = getData(images.g);
+    const b = getData(images.b);
+    const a = getData(images.a);
+
+    const output = ctx.createImageData(canvas.width, canvas.height);
+
+    for (let i = 0; i < output.data.length; i += 4) {
+        output.data[i]     = r ? r[i] : 255;
+        output.data[i + 1] = g ? g[i] : 255;
+        output.data[i + 2] = b ? b[i] : 255;
+        output.data[i + 3] = a ? a[i] : 255;
+    }
+
+    ctx.putImageData(output, 0, 0);
+
+    const link = document.createElement("a");
+    link.download = "packed_texture.png";
+    link.href = canvas.toDataURL();
+    link.click();
+}
+</script>
+
+</body>
+</html>
